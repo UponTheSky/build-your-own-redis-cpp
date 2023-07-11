@@ -11,14 +11,17 @@
 #include <iostream>
 #include <string>
 
+#include "utils.h"
+
+#define K_MAX_MSG 4096
+
 
 class Client {
   public:
     void request();
 
   private:
-    void die(const std::string msg) const;
-
+    int32_t query(int fd, const char* text);
 };
 
 #endif

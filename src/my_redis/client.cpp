@@ -1,14 +1,9 @@
 #include "client.h"
 
-void Client::die(const std::string msg) const {
-  std::cerr << "[" << errno << "] " << msg << "\n" << std::endl;
-  abort();
-}
-
 void Client::request() {
   int sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd < 0) {
-    die("socket ()");
+    Utils::die("socket ()");
   }
 
   struct sockaddr_in addr = {};
@@ -18,19 +13,66 @@ void Client::request() {
 
   int rv = connect(sockfd, (const struct sockaddr *)&addr, sizeof(addr));
   if (rv < 0) {
-    die("connect");
+    Utils::die("connect");
   }
 
-  char msg[] = "hello";
-  write(sockfd, msg, strlen(msg));
+  int32_t err;
 
-  char rbuf[64] = {};
-  ssize_t n = read(sockfd, rbuf, sizeof(rbuf) - 1);
-  if (n < 0) {
-    die("read");
+  if ((err = query(sockfd, "hello!"))) {
+    goto L_DONE;
+  };
+
+  if ((err = query(sockfd, "heyya"))) {
+    goto L_DONE;
+  };
+
+  if ((err = query(sockfd, "i am yeatee"))) {
+    goto L_DONE;
+  };
+
+  L_DONE:
+    close(sockfd);
+}
+
+int32_t Client::query(int fd, const char* text) {
+  uint32_t len = (uint32_t)strlen(text);
+  if (len > (uint32_t)K_MAX_MSG) {
+    return -1;
   }
 
-  std::cout << "server says: " << rbuf << std::endl;
+  // write the request
+  char wbuf[4 + K_MAX_MSG];
+  memcpy(wbuf, &len, 4);
+  memcpy(&wbuf[4], text, len);
+  if (int32_t err = Utils::write_all(fd, wbuf, 4 + len)) {
+    return err;
+  }
 
-  close(sockfd);
+  // read the response
+  char rbuf[4 + K_MAX_MSG + 1];
+  errno = 0;
+  int32_t err = Utils::read_full(fd, rbuf, 4);
+  if (err) {
+    errno == 0 ? Utils::msg("EOF") : Utils::msg("read() error");
+    return err;
+  }
+
+  // read the header
+  memcpy(&len, rbuf, 4);
+  if (len > (uint32_t)K_MAX_MSG) {
+    Utils::msg("too long");
+    return -1;
+  }
+
+  // read the body
+  err = Utils::read_full(fd, &rbuf[4], len);
+  if (err) {
+    Utils::msg("read() error");
+    return err;
+  }
+
+  rbuf[4 + len] = '\0';
+  std::cout << "server says: " << &rbuf[4] << std::endl;
+
+  return 0;
 }

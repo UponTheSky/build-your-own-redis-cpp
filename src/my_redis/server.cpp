@@ -1,35 +1,51 @@
 #include "server.h"
 #include <stdexcept>
 
-void Server::msg(const std::string msg) const {
-  std::cerr << msg << "\n" << std::endl;
-}
+int32_t Server::one_request(int connfd) {
+  char rbuf[4 + K_MAX_MSG + 1];
+  errno = 0;
 
-void Server::die(const std::string msg) const {
-  std::cerr << "[" << errno << "]" << msg << "\n" << std::endl;
-}
-
-void Server::do_something(int connfd) {
-  // using the C APIs
-  char rbuf[64] = {};
-
-  ssize_t n = read(connfd, rbuf, sizeof(rbuf) - 1);
-  if (n < 0) {
-    msg("read() error");
-    return;
+  // read the first header
+  int32_t err = Utils::read_full(connfd, rbuf, 4);
+  if (err) {
+    errno == 0 ? Utils::msg("EOF") : Utils::msg("read() error"); // see read_full - returns 0 when EOF
+    return err;
   }
 
-  std::cout << "client says: " << rbuf << "\n" << std::endl;
+  // check the length of the first chunk through the header
+  uint32_t len = 0;
+  memcpy(&len, rbuf, 4);
+  if (len > (uint32_t)K_MAX_MSG) { // len => 4 bytes header
+    Utils::msg("too long");
+    return -1;
+  }
 
-  char wbuf[] = "world";
-  write(connfd, wbuf, strlen(wbuf));
+  // read the first body chunk
+  err = Utils::read_full(connfd, &rbuf[4], len);
+  if (err) {
+    Utils::msg("read() error");
+    return err;
+  }
+
+  // log
+  rbuf[4 + len] = '\0';
+  std::cout << "client says: " << &rbuf[4] << "\n" << std::endl;
+
+  // reply
+  const char reply[] = "world";
+  char wbuf[4 + sizeof(reply)];
+  len = (uint32_t)strlen(reply);
+
+  memcpy(wbuf, &len, 4);
+  memcpy(&wbuf[4], reply, len); // after the header
+  return Utils::write_all(connfd, wbuf, 4 + len);
 }
 
 void Server::run() {
   // step 1: generate a socket(ipv4, tcp)
   int sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd < 0) {
-    die("socket ()");
+    Utils::die("socket ()");
   }
 
   // step 2: set socket options: socket level control(SOL_SOCKET), reusing addr(SO_REUSEADDR)
@@ -44,16 +60,18 @@ void Server::run() {
 
   int rv = bind(sockfd, (const sockaddr *)&addr, sizeof(addr));
   if (rv < 0) {
-    die("bind ()");
+    Utils::die("bind ()");
   }
 
   // step 4: listen to the incoming connections
   rv = listen(sockfd, SOMAXCONN);
   if (rv < 0) {
-    die("listen ()");
+    Utils::die("listen ()");
   }
 
+  // infinite loop that runs until the user connection is remained
   while (true) {
+    // step 5: accept the request
     struct sockaddr_in client_addr = {};
     socklen_t socklen = sizeof(client_addr);
     int connfd = accept(sockfd, (struct sockaddr*)&client_addr, &socklen);
@@ -61,7 +79,13 @@ void Server::run() {
       continue;
     }
 
-    do_something(connfd);
+    // step 6: parse the request one by one
+    while (true) {
+      int32_t err = one_request(connfd);
+      if (err) {
+        break;
+      }
+    }
     close(connfd);
   }
 }

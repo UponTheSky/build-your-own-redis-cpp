@@ -11,15 +11,17 @@
 #include <iostream>
 #include <string>
 
+#include "utils.h"
+
+#define K_MAX_MSG 4096
+
 
 class Server {
   public:
     void run();
 
   private:
-    void do_something(int connfd);
-    void msg(const std::string msg) const;
-    void die(const std::string msg) const;
+    int32_t one_request(int connfd);
 };
 
 #endif
