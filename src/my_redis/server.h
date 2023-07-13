@@ -19,22 +19,6 @@
 
 #define K_MAX_MSG 4096
 
-
-class Server {
-  public:
-    void run();
-
-  private:
-    int32_t one_request(int connfd);
-    void fd_set_nb(int fd);
-    void conn_put(std::map<int, Conn*>& fd2conn, struct Conn* conn);
-    int32_t accept_new_conn(std::map<int, Conn*>& fd2conn, int fd);
-    void connection_io(Conn* conn);
-    void state_req(Conn* conn);
-    void state_res(Conn* conn);
-    bool try_fill_buffer(Conn* conn);
-};
-
 // the state of an ongoing connection
 enum State: uint32_t {
   STATE_REQ = 0, // reading requests
@@ -51,5 +35,23 @@ struct Conn {
   size_t wbuf_sent = 0;
   uint8_t wbuf[4 + K_MAX_MSG];
 };
+
+class Server {
+  public:
+    void run();
+
+  private:
+    int32_t one_request(int connfd);
+    void fd_set_nb(int fd);
+    void conn_put(std::map<int, Conn*>& fd2conn, struct Conn* conn);
+    int32_t accept_new_conn(std::map<int, Conn*>& fd2conn, int fd);
+    void connection_io(Conn* conn);
+    void state_req(Conn* conn);
+    void state_res(Conn* conn);
+    bool try_fill_buffer(Conn* conn);
+    bool try_one_request(Conn* conn);
+    bool try_flush_buffer(Conn* conn);
+};
+
 
 #endif

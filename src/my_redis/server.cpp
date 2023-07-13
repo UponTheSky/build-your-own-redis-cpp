@@ -58,7 +58,7 @@ void Server::fd_set_nb(int fd) {
   }
 }
 
-void conn_put(std::map<int, Conn*>& fd2conn, struct Conn* conn) {
+void Server::conn_put(std::map<int, Conn*>& fd2conn, struct Conn* conn) {
   fd2conn[conn->fd] = conn;
 }
 
@@ -109,13 +109,104 @@ bool Server::try_fill_buffer(Conn* conn) {
   do {
     size_t cap = sizeof(conn->rbuf) - conn->rbuf_size;
     rv = read(conn->fd, &conn->rbuf[conn->rbuf_size], cap);
+  } while (rv < 0 && errno == EINTR); // even after interruption retries are required
+
+  // the connection is not ready yet
+  // EAGAIN: resource temporarily unavailable
+  if (rv < 0 && errno == EAGAIN) {
+    return false;
+  }
+
+  if (rv < 0) {
+    Utils::msg("read() error");
+    conn->state = State::STATE_END;
+    return false;
+  }
+
+  if (rv == 0) {
+    conn->rbuf_size > 0 ? Utils::msg("unexpected EOF") : Utils::msg("EOF");
+    conn->state = State::STATE_END;
+    return false;
+  }
+
+  conn->rbuf_size += (size_t)rv;
+  assert(conn->rbuf_size <= sizeof(conn->rbuf));
+
+  while (try_one_request(conn)) {};
+  return (conn->state == State::STATE_REQ);
+}
+
+bool Server::try_one_request(Conn* conn) {
+  if (conn->rbuf_size < 4) {
+    return false;
+  }
+
+  uint32_t len = 0;
+  memcpy(&len, &conn->rbuf[0], 4);
+  if (len > (uint32_t)K_MAX_MSG) {
+    Utils::msg("too long");
+    conn->state = State::STATE_END;
+    return false;
+  }
+
+  if (conn->rbuf_size < 4 + len) {
+    return false;
+  }
+
+  printf("client says: %.*s\n", len, &conn->rbuf[4]);
+
+  memcpy(&conn->wbuf[0], &len, 4);
+  memcpy(&conn->wbuf[4], &conn->rbuf[4], len);
+  conn->wbuf_size = 4 + len;
+
+  size_t remain = conn->rbuf_size - 4 - len;
+  if (remain) {
+    memmove(conn->rbuf, &conn->rbuf[4 + len], remain);
+  }
+  conn->rbuf_size = remain;
+
+  conn->state = State::STATE_RES;
+  state_res(conn);
+
+  return (conn->state == State::STATE_REQ);
+}
+
+void Server::state_res(Conn* conn) {
+  while (try_flush_buffer(conn)) {}
+}
+
+bool Server::try_flush_buffer(Conn* conn) {
+  ssize_t rv = 0;
+
+  do {
+    size_t remain = conn->wbuf_size - conn->wbuf_sent;
+    rv = write(conn->fd, &conn->wbuf[conn->wbuf_sent], remain);
   } while (rv < 0 && errno == EINTR);
 
   if (rv < 0 && errno == EAGAIN) {
     return false;
   }
 
+  if (rv < 0) {
+    Utils::msg("write() error");
+    conn->state = State::STATE_END;
+    return false;
+  }
+
+  conn->wbuf_sent += (size_t)rv;
+  assert (conn->wbuf_sent <= conn->wbuf_size);
+
+  if (conn->wbuf_sent == conn->wbuf_size) {
+    conn->state = State::STATE_REQ;
+    conn->wbuf_sent = 0;
+    conn->wbuf_size = 0;
+    return false;
+  }
+
+  return true;
 }
+
+
 
 void Server::run() {
   // step 1: generate a socket(ipv4, tcp)
@@ -189,7 +280,7 @@ void Server::run() {
       }
     }
 
-    // step 8: if the listening sockfd is active, try to accept a new connection
+    // step 9: if the listening sockfd is active, try to accept a new connection
     if (poll_args[0].revents) {
       accept_new_conn(fd2conn, sockfd);
     }

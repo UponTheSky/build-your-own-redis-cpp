@@ -16,25 +16,26 @@ void Client::request() {
     Utils::die("connect");
   }
 
-  int32_t err;
+  const char *query_list[3] = {"hello1", "hello2", "hello3"};
 
-  if ((err = query(sockfd, "hello!"))) {
-    goto L_DONE;
-  };
-
-  if ((err = query(sockfd, "heyya"))) {
-    goto L_DONE;
-  };
-
-  if ((err = query(sockfd, "i am yeatee"))) {
-    goto L_DONE;
-  };
+  for (size_t i = 0; i < 3; ++i) {
+    int32_t err = send_req(sockfd, query_list[i]);
+    if (err) {
+        goto L_DONE;
+    }
+  }
+  for (size_t i = 0; i < 3; ++i) {
+    int32_t err = read_res(sockfd);
+    if (err) {
+        goto L_DONE;
+    }
+  }
 
   L_DONE:
     close(sockfd);
 }
 
-int32_t Client::query(int fd, const char* text) {
+int32_t Client::send_req(int fd, const char* text) {
   uint32_t len = (uint32_t)strlen(text);
   if (len > (uint32_t)K_MAX_MSG) {
     return -1;
@@ -44,10 +45,10 @@ int32_t Client::query(int fd, const char* text) {
   char wbuf[4 + K_MAX_MSG];
   memcpy(wbuf, &len, 4);
   memcpy(&wbuf[4], text, len);
-  if (int32_t err = Utils::write_all(fd, wbuf, 4 + len)) {
-    return err;
-  }
+  return Utils::write_all(fd, wbuf, 4 + len);
+}
 
+int32_t Client::read_res(int fd) {
   // read the response
   char rbuf[4 + K_MAX_MSG + 1];
   errno = 0;
@@ -58,6 +59,7 @@ int32_t Client::query(int fd, const char* text) {
   }
 
   // read the header
+  uint32_t len = 0;
   memcpy(&len, rbuf, 4);
   if (len > (uint32_t)K_MAX_MSG) {
     Utils::msg("too long");
