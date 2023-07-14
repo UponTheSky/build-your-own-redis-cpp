@@ -36,6 +36,12 @@ struct Conn {
   uint8_t wbuf[4 + K_MAX_MSG];
 };
 
+enum Rescode: uint32_t {
+  RES_OK = 0,
+  RES_ERR = 1,
+  RES_NX = 2,
+};
+
 class Server {
   public:
     void run();
@@ -51,7 +57,14 @@ class Server {
     bool try_fill_buffer(Conn* conn);
     bool try_one_request(Conn* conn);
     bool try_flush_buffer(Conn* conn);
-};
 
+    int32_t parse_req(const uint8_t* data, size_t len, std::vector<std::string>& out);
+    int32_t do_request(const uint8_t* req, uint32_t reqlen, uint32_t& rescode, uint8_t* res, uint32_t& reslen);
+    Rescode do_get(const std::vector<std::string>& cmd, uint8_t* res, uint32_t& reslen);
+    Rescode do_set(const std::vector<std::string>& cmd);
+    Rescode do_del(const std::vector<std::string>& cmd);
+
+    std::map<std::string, std::string> g_map;
+};
 
 #endif

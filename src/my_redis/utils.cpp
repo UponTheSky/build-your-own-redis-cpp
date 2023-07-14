@@ -37,3 +37,7 @@ int32_t Utils::write_all(int fd, const char* buf, size_t buf_size) {
 
   return 0;
 }
+
+bool Utils::cmd_is(const std::string& word, const std::string& cmd) {
+  return 0 == strcasecmp(word.c_str(), cmd.c_str());
+}

@@ -10,6 +10,7 @@
 
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "utils.h"
 
@@ -18,10 +19,10 @@
 
 class Client {
   public:
-    void request();
+    void request(int argc, char** argv);
 
   private:
-    int32_t send_req(int fd, const char* text);
+    int32_t send_req(int fd, const std::vector<std::string>& cmd);
     int32_t read_res(int fd);
 };
 
