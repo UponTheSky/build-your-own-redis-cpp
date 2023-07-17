@@ -16,6 +16,7 @@
 #include <map>
 
 #include "utils.h"
+#include "hash_table.h"
 
 #define K_MAX_MSG 4096
 
@@ -42,6 +43,12 @@ enum Rescode: uint32_t {
   RES_NX = 2,
 };
 
+struct Entry {
+  HashTable::HNode node;
+  std::string key;
+  std::string val;
+};
+
 class Server {
   public:
     void run();
@@ -60,11 +67,17 @@ class Server {
 
     int32_t parse_req(const uint8_t* data, size_t len, std::vector<std::string>& out);
     int32_t do_request(const uint8_t* req, uint32_t reqlen, uint32_t& rescode, uint8_t* res, uint32_t& reslen);
-    Rescode do_get(const std::vector<std::string>& cmd, uint8_t* res, uint32_t& reslen);
-    Rescode do_set(const std::vector<std::string>& cmd);
-    Rescode do_del(const std::vector<std::string>& cmd);
+    Rescode do_get(std::vector<std::string>& cmd, uint8_t* res, uint32_t& reslen);
+    Rescode do_set(std::vector<std::string>& cmd, uint8_t* res, uint32_t& reslen);
+    Rescode do_del(std::vector<std::string>& cmd, uint8_t* res, uint32_t& reslen);
 
     std::map<std::string, std::string> g_map;
+
+    struct {
+      HashTable::HMap db;
+    } g_data;
 };
+
+bool entry_eq(const HashTable::HNode* lhs, const HashTable::HNode* rhs);
 
 #endif

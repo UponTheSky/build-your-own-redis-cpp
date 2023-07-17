@@ -41,3 +41,12 @@ int32_t Utils::write_all(int fd, const char* buf, size_t buf_size) {
 bool Utils::cmd_is(const std::string& word, const std::string& cmd) {
   return 0 == strcasecmp(word.c_str(), cmd.c_str());
 }
+
+uint64_t Utils::str_hash(const uint8_t* data, size_t len) {
+  uint32_t h = 0x811C9DC5;
+    for (size_t i = 0; i < len; i++) {
+      h = (h +data[i]) * 0x01000193;
+    }
+
+    return h;
+}

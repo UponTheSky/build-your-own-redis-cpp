@@ -198,9 +198,9 @@ int32_t Server::do_request(
   if (cmd.size() == 2 && Utils::cmd_is(cmd[0], "get")) {
     rescode = do_get(cmd, res, reslen);
   } else if (cmd.size() == 3 && Utils::cmd_is(cmd[0], "set")) {
-    rescode = do_set(cmd);
+    rescode = do_set(cmd, res, reslen);
   } else if (cmd.size() == 2 && Utils::cmd_is(cmd[0], "del")) {
-    rescode = do_del(cmd);
+    rescode = do_del(cmd, res, reslen);
   } else {
     rescode = RES_ERR;
     const char* msg = "Unknown cmd";
@@ -285,27 +285,68 @@ bool Server::try_flush_buffer(Conn* conn) {
   return true;
 }
 
-Rescode Server::do_get(const std::vector<std::string>& cmd, uint8_t* res, uint32_t& reslen) {
-  if (!g_map.count(cmd[1])) {
+bool entry_eq(const HashTable::HNode* lhs, const HashTable::HNode* rhs) {
+  Entry* le = container_of(lhs, Entry, node);
+  Entry* re = container_of(rhs, Entry, node);
+  return lhs->hcode == rhs->hcode && le->key == re->key;
+}
+
+Rescode Server::do_get(std::vector<std::string>& cmd, uint8_t* res, uint32_t& reslen) {
+  Entry key;
+  key.key.swap(cmd[1]);
+  key.node.hcode = Utils::str_hash((uint8_t*)key.key.data(), key.key.size());
+
+  HashTable::HNode* node = HashTable::hm_lookup(g_data.db, &key.node, &entry_eq);
+  if (!node) {
     return Rescode::RES_NX;
   }
 
-  std::string& val = g_map[cmd[1]];
+  std::string& val = container_of(node, Entry, node)->val; // the pointer to the Entry instance containing the node
   assert(val.size() < (size_t)K_MAX_MSG);
-
   memcpy(res, val.data(), val.size());
   reslen = (uint32_t)val.size();
 
   return Rescode::RES_OK;
 }
 
-Rescode Server::do_set(const std::vector<std::string>& cmd) {
-  g_map[cmd[1]] = cmd[2];
+Rescode Server::do_set(
+  std::vector<std::string>& cmd,
+  uint8_t* res,
+  uint32_t& reslen
+) {
+  Entry key;
+  key.key.swap(cmd[1]);
+  key.node.hcode = Utils::str_hash((uint8_t*)key.key.data(), key.key.size());
+
+  HashTable::HNode* node = HashTable::hm_lookup(g_data.db, &key.node, &entry_eq);
+
+  if (node) {
+    container_of(node, Entry, node)->val.swap(cmd[2]);
+  } else {
+    Entry* ent = new Entry();
+    ent->key.swap(key.key);
+    ent->node.hcode = key.node.hcode;
+    ent->val.swap(cmd[2]);
+    hm_insert(g_data.db, &ent->node);
+  }
+
   return Rescode::RES_OK;
 }
 
-Rescode Server::do_del(const std::vector<std::string>& cmd) {
-  g_map.erase(cmd[1]);
+Rescode Server::do_del(
+  std::vector<std::string>& cmd,
+  uint8_t* res,
+  uint32_t& reslen
+) {
+  Entry key;
+  key.key.swap(cmd[1]);
+  key.node.hcode = Utils::str_hash((uint8_t*)key.key.data(), key.key.size());
+
+  HashTable::HNode* node = HashTable::hm_pop(g_data.db, &key.node, &entry_eq);
+  if (node) {
+    delete container_of(node, Entry, node);
+  }
+
   return Rescode::RES_OK;
 }
 
@@ -385,15 +426,5 @@ void Server::run() {
     if (poll_args[0].revents) {
       accept_new_conn(fd2conn, sockfd);
     }
-
-  //   // step 6: parse the request one by one
-  //   while (true) {
-  //     int32_t err = one_request(connfd);
-  //     if (err) {
-  //       break;
-  //     }
-  //   }
-  //   close(connfd);
-  // }
   }
 }
